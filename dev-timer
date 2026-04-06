@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# dev-timer - A simple Pomodoro timer for the terminal
+set -euo pipefail
+
+VERSION="1.0.0"
+
+# Default values (in minutes)
+WORK_TIME=25
+SHORT_BREAK=5
+LONG_BREAK=15
+SESSIONS_UNTIL_LONG=4
+
+show_help() {
+    cat << EOF
+dev-timer v${VERSION}
+
+A simple Pomodoro timer for the terminal.
+
+Usage: dev-timer [OPTIONS] [COMMAND]
+
+Commands:
+    start       Start a work session (default)
+    break       Start a short break
+    long        Start a long break
+    custom MIN  Start a custom timer
+
+Options:
+    -w, --work MIN        Work session length (default: 25)
+    -s, --short MIN       Short break length (default: 5)
+    -l, --long MIN        Long break length (default: 15)
+    -n, --notify          Send system notification when complete
+    -q, --quiet           Suppress sound
+    -h, --help            Show this help
+    -v, --version         Show version
+
+Examples:
+    dev-timer                    # Start 25-minute work session
+    dev-timer break              # Start 5-minute break
+    dev-timer custom 10          # Custom 10-minute timer
+    dev-timer -w 50 start        # 50-minute work session
+
+EOF
+}
+
+notify_complete() {
+    local message="$1"
+    if command -v notify-send &> /dev/null; then
+        notify-send "dev-timer" "$message"
+    elif command -v osascript &> /dev/null; then
+        osascript -e "display notification \"$message\" with title \"dev-timer\""
+    fi
+}
+
+play_sound() {
+    if [[ "$QUIET" == false ]]; then
+        # Try various sound commands
+        if command -v paplay &> /dev/null; then
+            paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null || true
+        elif command -v afplay &> /dev/null; then
+            afplay /System/Library/Sounds/Glass.aiff 2>/dev/null || true
+        else
+            echo -e '\a'  # Terminal bell
+        fi
+    fi
+}
+
+run_timer() {
+    local minutes=$1
+    local label=$2
+    local seconds=$((minutes * 60))
+    
+    echo "🍅 $label - $minutes minutes"
+    echo "Press Ctrl+C to cancel"
+    echo ""
+    
+    local start_time=$(date +%s)
+    local end_time=$((start_time + seconds))
+    
+    while [ $(date +%s) -lt $end_time ]; do
+        local remaining=$((end_time - $(date +%s)))
+        local mins=$((remaining / 60))
+        local secs=$((remaining % 60))
+        
+        printf "\r⏱️  %02d:%02d remaining" $mins $secs
+        sleep 1
+    done
+    
+    echo -e "\n\n✨ $label complete!"
+    play_sound
+    
+    if [[ "$NOTIFY" == true ]]; then
+        notify_complete "$label complete!"
+    fi
+}
+
+main() {
+    local command="start"
+    local NOTIFY=false
+    local QUIET=false
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -w|--work)
+                WORK_TIME="$2"
+                shift 2
+                ;;
+            -s|--short)
+                SHORT_BREAK="$2"
+                shift 2
+                ;;
+            -l|--long)
+                LONG_BREAK="$2"
+                shift 2
+                ;;
+            -n|--notify)
+                NOTIFY=true
+                shift
+                ;;
+            -q|--quiet)
+                QUIET=true
+                shift
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                echo "dev-timer v${VERSION}"
+                exit 0
+                ;;
+            start|break|long)
+                command="$1"
+                shift
+                ;;
+            custom)
+                command="custom"
+                WORK_TIME="$2"
+                shift 2
+                ;;
+            *)
+                echo "Error: Unknown option $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    case "$command" in
+        start)
+            run_timer "$WORK_TIME" "Work session"
+            ;;
+        break)
+            run_timer "$SHORT_BREAK" "Short break"
+            ;;
+        long)
+            run_timer "$LONG_BREAK" "Long break"
+            ;;
+        custom)
+            run_timer "$WORK_TIME" "Custom timer"
+            ;;
+    esac
+}
+
+main "$@"
