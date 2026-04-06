@@ -33,12 +33,19 @@ dev-timer --notify
 
 # Customize durations
 dev-timer --work 50 --short 10 start
+
+# View session statistics
+dev-timer stats
+
+# Reset statistics
+dev-timer reset
 ```
 
 ## Features
 
 - ⏱️  Simple countdown timer
 - 🍅 Pomodoro technique built-in (25/5/15 defaults)
+- 📊 Session tracking and statistics
 - 🔔 Optional system notifications
 - 🎵 Sound alerts (or quiet mode)
 - ⌨️  Keyboard interrupt (Ctrl+C)
@@ -53,6 +60,15 @@ The default times follow the classic Pomodoro Technique:
 
 You can customize all of these with flags.
 
+## Commands
+
+- `start` - Start a work session (default)
+- `break` - Start a short break
+- `long` - Start a long break
+- `custom MIN` - Start a custom timer
+- `stats` - View session statistics
+- `reset` - Reset all statistics
+
 ## Options
 
 - `-w, --work MIN` - Work session length (default: 25)
@@ -62,6 +78,36 @@ You can customize all of these with flags.
 - `-q, --quiet` - No sound alerts
 - `-h, --help` - Show help
 - `-v, --version` - Show version
+
+## Statistics
+
+dev-timer automatically tracks your sessions in `~/.dev-timer/sessions.log`. Use `dev-timer stats` to see:
+
+- Total sessions completed
+- Work vs break sessions
+- Total time tracked
+- Today's sessions
+- Recent session history
+
+Example output:
+```
+📊 dev-timer Statistics
+=======================
+
+Total sessions:    42
+Work sessions:     28
+Break sessions:    14
+Total time:        785 minutes (13.1 hours)
+
+Today (2026-04-06):
+  Sessions:        8
+  Minutes:         185
+
+Recent sessions:
+  2026-04-06 09:15:32 - work (25m)
+  2026-04-06 09:45:18 - break (5m)
+  ...
+```
 
 ## Requirements
 

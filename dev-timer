@@ -2,13 +2,17 @@
 # dev-timer - A simple Pomodoro timer for the terminal
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # Default values (in minutes)
 WORK_TIME=25
 SHORT_BREAK=5
 LONG_BREAK=15
 SESSIONS_UNTIL_LONG=4
+
+# Stats file location
+STATS_DIR="${HOME}/.dev-timer"
+STATS_FILE="${STATS_DIR}/sessions.log"
 
 show_help() {
     cat << EOF
@@ -23,6 +27,8 @@ Commands:
     break       Start a short break
     long        Start a long break
     custom MIN  Start a custom timer
+    stats       Show session statistics
+    reset       Reset session statistics
 
 Options:
     -w, --work MIN        Work session length (default: 25)
@@ -38,8 +44,84 @@ Examples:
     dev-timer break              # Start 5-minute break
     dev-timer custom 10          # Custom 10-minute timer
     dev-timer -w 50 start        # 50-minute work session
+    dev-timer stats              # View session statistics
 
 EOF
+}
+
+init_stats() {
+    mkdir -p "$STATS_DIR"
+    touch "$STATS_FILE"
+}
+
+log_session() {
+    local type="$1"
+    local minutes="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local date=$(date '+%Y-%m-%d')
+    
+    init_stats
+    echo "${timestamp}|${date}|${type}|${minutes}" >> "$STATS_FILE"
+}
+
+show_stats() {
+    if [[ ! -f "$STATS_FILE" ]]; then
+        echo "📊 No sessions recorded yet!"
+        echo "Start a timer to begin tracking."
+        return
+    fi
+    
+    local total_sessions=$(wc -l < "$STATS_FILE")
+    local work_sessions=$(grep -c '|work|' "$STATS_FILE" || echo 0)
+    local break_sessions=$(grep -c '|break|' "$STATS_FILE" || echo 0)
+    local total_minutes=$(awk -F'|' '{sum+=$4} END {print sum}' "$STATS_FILE")
+    local total_hours=$(echo "scale=1; $total_minutes / 60" | bc)
+    
+    echo "📊 dev-timer Statistics"
+    echo "======================="
+    echo ""
+    echo "Total sessions:    $total_sessions"
+    echo "Work sessions:     $work_sessions"
+    echo "Break sessions:    $break_sessions"
+    echo "Total time:        ${total_minutes} minutes (${total_hours} hours)"
+    echo ""
+    
+    # Today's stats
+    local today=$(date '+%Y-%m-%d')
+    local today_sessions=$(grep -c "|${today}|" "$STATS_FILE" || echo 0)
+    local today_minutes=$(grep "|${today}|" "$STATS_FILE" | awk -F'|' '{sum+=$4} END {print sum}')
+    
+    if [[ $today_sessions -gt 0 ]]; then
+        echo "Today ($today):"
+        echo "  Sessions:        $today_sessions"
+        echo "  Minutes:         ${today_minutes:-0}"
+        echo ""
+    fi
+    
+    # Last 5 sessions
+    echo "Recent sessions:"
+    tail -5 "$STATS_FILE" | while IFS='|' read -r timestamp date type minutes; do
+        printf "  %s - %s (%dm)\n" "$timestamp" "$type" "$minutes"
+    done
+    
+    echo ""
+    echo "Stats file: $STATS_FILE"
+}
+
+reset_stats() {
+    if [[ -f "$STATS_FILE" ]]; then
+        echo "⚠️  This will delete all session statistics."
+        read -p "Are you sure? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm "$STATS_FILE"
+            echo "✨ Statistics reset!"
+        else
+            echo "Cancelled."
+        fi
+    else
+        echo "No statistics to reset."
+    fi
 }
 
 notify_complete() {
@@ -67,6 +149,7 @@ play_sound() {
 run_timer() {
     local minutes=$1
     local label=$2
+    local type=$3
     local seconds=$((minutes * 60))
     
     echo "🍅 $label - $minutes minutes"
@@ -75,6 +158,11 @@ run_timer() {
     
     local start_time=$(date +%s)
     local end_time=$((start_time + seconds))
+    
+    # Track if timer was completed
+    local completed=false
+    
+    trap 'echo -e "\n\n⚠️  Timer cancelled."; exit 130' INT
     
     while [ $(date +%s) -lt $end_time ]; do
         local remaining=$((end_time - $(date +%s)))
@@ -85,12 +173,17 @@ run_timer() {
         sleep 1
     done
     
+    completed=true
+    
     echo -e "\n\n✨ $label complete!"
     play_sound
     
     if [[ "$NOTIFY" == true ]]; then
         notify_complete "$label complete!"
     fi
+    
+    # Log completed session
+    log_session "$type" "$minutes"
 }
 
 main() {
@@ -128,7 +221,7 @@ main() {
                 echo "dev-timer v${VERSION}"
                 exit 0
                 ;;
-            start|break|long)
+            start|break|long|stats|reset)
                 command="$1"
                 shift
                 ;;
@@ -147,16 +240,22 @@ main() {
     
     case "$command" in
         start)
-            run_timer "$WORK_TIME" "Work session"
+            run_timer "$WORK_TIME" "Work session" "work"
             ;;
         break)
-            run_timer "$SHORT_BREAK" "Short break"
+            run_timer "$SHORT_BREAK" "Short break" "break"
             ;;
         long)
-            run_timer "$LONG_BREAK" "Long break"
+            run_timer "$LONG_BREAK" "Long break" "long-break"
             ;;
         custom)
-            run_timer "$WORK_TIME" "Custom timer"
+            run_timer "$WORK_TIME" "Custom timer" "custom"
+            ;;
+        stats)
+            show_stats
+            ;;
+        reset)
+            reset_stats
             ;;
     esac
 }
