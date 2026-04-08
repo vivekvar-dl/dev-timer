@@ -2,7 +2,7 @@
 # dev-timer - A simple Pomodoro timer for the terminal
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 # Default values (in minutes)
 WORK_TIME=25
@@ -34,17 +34,21 @@ Options:
     -w, --work MIN        Work session length (default: 25)
     -s, --short MIN       Short break length (default: 5)
     -l, --long MIN        Long break length (default: 15)
+    -g, --goal "TEXT"     Set a goal/description for this session
     -n, --notify          Send system notification when complete
     -q, --quiet           Suppress sound
     -h, --help            Show this help
     -v, --version         Show version
 
 Examples:
-    dev-timer                    # Start 25-minute work session
-    dev-timer break              # Start 5-minute break
-    dev-timer custom 10          # Custom 10-minute timer
-    dev-timer -w 50 start        # 50-minute work session
-    dev-timer stats              # View session statistics
+    dev-timer                              # Start 25-minute work session
+    dev-timer -g "Fix bug #123"            # Work session with goal
+    dev-timer break                        # Start 5-minute break
+    dev-timer custom 10                    # Custom 10-minute timer
+    dev-timer -w 50 start                  # 50-minute work session
+    dev-timer stats                        # View session statistics
+    dev-timer stats --today                # Today's sessions only
+    dev-timer stats --goals                # Show sessions with goals
 
 EOF
 }
@@ -57,11 +61,12 @@ init_stats() {
 log_session() {
     local type="$1"
     local minutes="$2"
+    local goal="${3:-}"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local date=$(date '+%Y-%m-%d')
     
     init_stats
-    echo "${timestamp}|${date}|${type}|${minutes}" >> "$STATS_FILE"
+    echo "${timestamp}|${date}|${type}|${minutes}|${goal}" >> "$STATS_FILE"
 }
 
 show_stats() {
@@ -70,6 +75,26 @@ show_stats() {
         echo "Start a timer to begin tracking."
         return
     fi
+    
+    local show_today_only=false
+    local show_goals_only=false
+    
+    # Parse stats options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --today)
+                show_today_only=true
+                shift
+                ;;
+            --goals)
+                show_goals_only=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
     
     local total_sessions=$(wc -l < "$STATS_FILE")
     local work_sessions=$(grep -c '|work|' "$STATS_FILE" || echo 0)
@@ -80,29 +105,55 @@ show_stats() {
     echo "📊 dev-timer Statistics"
     echo "======================="
     echo ""
-    echo "Total sessions:    $total_sessions"
-    echo "Work sessions:     $work_sessions"
-    echo "Break sessions:    $break_sessions"
-    echo "Total time:        ${total_minutes} minutes (${total_hours} hours)"
-    echo ""
+    
+    if [[ "$show_today_only" == false ]]; then
+        echo "Total sessions:    $total_sessions"
+        echo "Work sessions:     $work_sessions"
+        echo "Break sessions:    $break_sessions"
+        echo "Total time:        ${total_minutes} minutes (${total_hours} hours)"
+        echo ""
+    fi
     
     # Today's stats
     local today=$(date '+%Y-%m-%d')
     local today_sessions=$(grep -c "|${today}|" "$STATS_FILE" || echo 0)
     local today_minutes=$(grep "|${today}|" "$STATS_FILE" | awk -F'|' '{sum+=$4} END {print sum}')
     
-    if [[ $today_sessions -gt 0 ]]; then
+    if [[ $today_sessions -gt 0 || "$show_today_only" == true ]]; then
         echo "Today ($today):"
         echo "  Sessions:        $today_sessions"
         echo "  Minutes:         ${today_minutes:-0}"
         echo ""
     fi
     
-    # Last 5 sessions
-    echo "Recent sessions:"
-    tail -5 "$STATS_FILE" | while IFS='|' read -r timestamp date type minutes; do
-        printf "  %s - %s (%dm)\n" "$timestamp" "$type" "$minutes"
-    done
+    # Show sessions with goals
+    if [[ "$show_goals_only" == true ]]; then
+        echo "Sessions with goals:"
+        grep -v '||$' "$STATS_FILE" | while IFS='|' read -r timestamp date type minutes goal; do
+            if [[ -n "$goal" ]]; then
+                printf "  %s - %s (%dm): %s\n" "$timestamp" "$type" "$minutes" "$goal"
+            fi
+        done
+    elif [[ "$show_today_only" == true ]]; then
+        echo "Today's sessions:"
+        grep "|${today}|" "$STATS_FILE" | while IFS='|' read -r timestamp date type minutes goal; do
+            if [[ -n "$goal" ]]; then
+                printf "  %s - %s (%dm): %s\n" "$timestamp" "$type" "$minutes" "$goal"
+            else
+                printf "  %s - %s (%dm)\n" "$timestamp" "$type" "$minutes"
+            fi
+        done
+    else
+        # Last 10 sessions
+        echo "Recent sessions:"
+        tail -10 "$STATS_FILE" | while IFS='|' read -r timestamp date type minutes goal; do
+            if [[ -n "$goal" ]]; then
+                printf "  %s - %s (%dm): %s\n" "$timestamp" "$type" "$minutes" "$goal"
+            else
+                printf "  %s - %s (%dm)\n" "$timestamp" "$type" "$minutes"
+            fi
+        done
+    fi
     
     echo ""
     echo "Stats file: $STATS_FILE"
@@ -150,9 +201,13 @@ run_timer() {
     local minutes=$1
     local label=$2
     local type=$3
+    local goal="${4:-}"
     local seconds=$((minutes * 60))
     
     echo "🍅 $label - $minutes minutes"
+    if [[ -n "$goal" ]]; then
+        echo "🎯 Goal: $goal"
+    fi
     echo "Press Ctrl+C to cancel"
     echo ""
     
@@ -176,6 +231,9 @@ run_timer() {
     completed=true
     
     echo -e "\n\n✨ $label complete!"
+    if [[ -n "$goal" ]]; then
+        echo "✅ Goal: $goal"
+    fi
     play_sound
     
     if [[ "$NOTIFY" == true ]]; then
@@ -183,13 +241,15 @@ run_timer() {
     fi
     
     # Log completed session
-    log_session "$type" "$minutes"
+    log_session "$type" "$minutes" "$goal"
 }
 
 main() {
     local command="start"
     local NOTIFY=false
     local QUIET=false
+    local GOAL=""
+    local stats_args=()
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -203,6 +263,10 @@ main() {
                 ;;
             -l|--long)
                 LONG_BREAK="$2"
+                shift 2
+                ;;
+            -g|--goal)
+                GOAL="$2"
                 shift 2
                 ;;
             -n|--notify)
@@ -221,9 +285,18 @@ main() {
                 echo "dev-timer v${VERSION}"
                 exit 0
                 ;;
-            start|break|long|stats|reset)
+            start|break|long|reset)
                 command="$1"
                 shift
+                ;;
+            stats)
+                command="stats"
+                shift
+                # Collect remaining args for stats command
+                while [[ $# -gt 0 ]]; do
+                    stats_args+=("$1")
+                    shift
+                done
                 ;;
             custom)
                 command="custom"
@@ -240,19 +313,19 @@ main() {
     
     case "$command" in
         start)
-            run_timer "$WORK_TIME" "Work session" "work"
+            run_timer "$WORK_TIME" "Work session" "work" "$GOAL"
             ;;
         break)
-            run_timer "$SHORT_BREAK" "Short break" "break"
+            run_timer "$SHORT_BREAK" "Short break" "break" "$GOAL"
             ;;
         long)
-            run_timer "$LONG_BREAK" "Long break" "long-break"
+            run_timer "$LONG_BREAK" "Long break" "long-break" "$GOAL"
             ;;
         custom)
-            run_timer "$WORK_TIME" "Custom timer" "custom"
+            run_timer "$WORK_TIME" "Custom timer" "custom" "$GOAL"
             ;;
         stats)
-            show_stats
+            show_stats "${stats_args[@]}"
             ;;
         reset)
             reset_stats

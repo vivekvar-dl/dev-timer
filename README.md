@@ -19,6 +19,9 @@ chmod +x ~/bin/dev-timer
 # Start a 25-minute work session (default)
 dev-timer
 
+# Start a work session with a goal
+dev-timer -g "Fix bug #123"
+
 # Take a 5-minute break
 dev-timer break
 
@@ -37,6 +40,12 @@ dev-timer --work 50 --short 10 start
 # View session statistics
 dev-timer stats
 
+# View today's sessions only
+dev-timer stats --today
+
+# View sessions with goals
+dev-timer stats --goals
+
 # Reset statistics
 dev-timer reset
 ```
@@ -45,6 +54,7 @@ dev-timer reset
 
 - ⏱️  Simple countdown timer
 - 🍅 Pomodoro technique built-in (25/5/15 defaults)
+- 🎯 Session goals - track what you're working on
 - 📊 Session tracking and statistics
 - 🔔 Optional system notifications
 - 🎵 Sound alerts (or quiet mode)
@@ -74,6 +84,7 @@ You can customize all of these with flags.
 - `-w, --work MIN` - Work session length (default: 25)
 - `-s, --short MIN` - Short break length (default: 5)
 - `-l, --long MIN` - Long break length (default: 15)
+- `-g, --goal "TEXT"` - Set a goal/description for this session
 - `-n, --notify` - Send system notification when complete
 - `-q, --quiet` - No sound alerts
 - `-h, --help` - Show help
@@ -88,6 +99,13 @@ dev-timer automatically tracks your sessions in `~/.dev-timer/sessions.log`. Use
 - Total time tracked
 - Today's sessions
 - Recent session history
+- Session goals (when set)
+
+### Stats Commands
+
+- `dev-timer stats` - Full statistics with recent sessions
+- `dev-timer stats --today` - Today's sessions only
+- `dev-timer stats --goals` - Sessions with goals
 
 Example output:
 ```
@@ -99,13 +117,14 @@ Work sessions:     28
 Break sessions:    14
 Total time:        785 minutes (13.1 hours)
 
-Today (2026-04-06):
+Today (2026-04-08):
   Sessions:        8
   Minutes:         185
 
 Recent sessions:
-  2026-04-06 09:15:32 - work (25m)
-  2026-04-06 09:45:18 - break (5m)
+  2026-04-08 09:15:32 - work (25m): Fix bug #123
+  2026-04-08 09:45:18 - break (5m)
+  2026-04-08 10:00:42 - work (25m): Write documentation
   ...
 ```
 
