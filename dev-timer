@@ -2,7 +2,7 @@
 # dev-timer - A simple Pomodoro timer for the terminal
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 # Default values (in minutes)
 WORK_TIME=25
@@ -28,6 +28,7 @@ Commands:
     long        Start a long break
     custom MIN  Start a custom timer
     stats       Show session statistics
+    export      Export session data
     reset       Reset session statistics
 
 Options:
@@ -40,6 +41,10 @@ Options:
     -h, --help            Show this help
     -v, --version         Show version
 
+Export formats:
+    dev-timer export --csv [FILE]         # Export to CSV (default: sessions.csv)
+    dev-timer export --json [FILE]        # Export to JSON (default: sessions.json)
+
 Examples:
     dev-timer                              # Start 25-minute work session
     dev-timer -g "Fix bug #123"            # Work session with goal
@@ -49,6 +54,8 @@ Examples:
     dev-timer stats                        # View session statistics
     dev-timer stats --today                # Today's sessions only
     dev-timer stats --goals                # Show sessions with goals
+    dev-timer export --csv                 # Export to CSV
+    dev-timer export --json stats.json     # Export to JSON file
 
 EOF
 }
@@ -175,6 +182,137 @@ reset_stats() {
     fi
 }
 
+export_csv() {
+    local output_file="${1:-sessions.csv}"
+    
+    if [[ ! -f "$STATS_FILE" ]]; then
+        echo "❌ No sessions to export. Start a timer first!"
+        return 1
+    fi
+    
+    # Create CSV with headers
+    echo "timestamp,date,type,minutes,goal" > "$output_file"
+    
+    # Convert pipe-delimited to CSV
+    while IFS='|' read -r timestamp date type minutes goal; do
+        # Escape quotes in goal field
+        goal="${goal//\"/\"\"}"
+        if [[ -n "$goal" ]]; then
+            echo "\"$timestamp\",\"$date\",\"$type\",$minutes,\"$goal\"" >> "$output_file"
+        else
+            echo "\"$timestamp\",\"$date\",\"$type\",$minutes," >> "$output_file"
+        fi
+    done < "$STATS_FILE"
+    
+    local count=$(wc -l < "$STATS_FILE")
+    echo "✅ Exported $count sessions to $output_file"
+}
+
+export_json() {
+    local output_file="${1:-sessions.json}"
+    
+    if [[ ! -f "$STATS_FILE" ]]; then
+        echo "❌ No sessions to export. Start a timer first!"
+        return 1
+    fi
+    
+    # Build JSON array
+    echo "{" > "$output_file"
+    echo "  \"sessions\": [" >> "$output_file"
+    
+    local first=true
+    while IFS='|' read -r timestamp date type minutes goal; do
+        if [[ "$first" == true ]]; then
+            first=false
+        else
+            echo "," >> "$output_file"
+        fi
+        
+        # Escape quotes and backslashes in strings
+        timestamp="${timestamp//\\/\\\\}"
+        timestamp="${timestamp//\"/\\\"}"
+        date="${date//\\/\\\\}"
+        date="${date//\"/\\\"}"
+        type="${type//\\/\\\\}"
+        type="${type//\"/\\\"}"
+        goal="${goal//\\/\\\\}"
+        goal="${goal//\"/\\\"}"
+        
+        echo -n "    {" >> "$output_file"
+        echo -n "\"timestamp\":\"$timestamp\"," >> "$output_file"
+        echo -n "\"date\":\"$date\"," >> "$output_file"
+        echo -n "\"type\":\"$type\"," >> "$output_file"
+        echo -n "\"minutes\":$minutes," >> "$output_file"
+        echo -n "\"goal\":\"$goal\"" >> "$output_file"
+        echo -n "}" >> "$output_file"
+    done < "$STATS_FILE"
+    
+    echo "" >> "$output_file"
+    echo "  ]," >> "$output_file"
+    
+    # Add summary statistics
+    local total_sessions=$(wc -l < "$STATS_FILE")
+    local work_sessions=$(grep -c '|work|' "$STATS_FILE" || echo 0)
+    local break_sessions=$(grep -c '|break|' "$STATS_FILE" || echo 0)
+    local total_minutes=$(awk -F'|' '{sum+=$4} END {print sum}' "$STATS_FILE")
+    
+    echo "  \"summary\": {" >> "$output_file"
+    echo "    \"total_sessions\": $total_sessions," >> "$output_file"
+    echo "    \"work_sessions\": $work_sessions," >> "$output_file"
+    echo "    \"break_sessions\": $break_sessions," >> "$output_file"
+    echo "    \"total_minutes\": $total_minutes" >> "$output_file"
+    echo "  }" >> "$output_file"
+    echo "}" >> "$output_file"
+    
+    echo "✅ Exported $total_sessions sessions to $output_file"
+}
+
+export_data() {
+    local format=""
+    local output_file=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --csv)
+                format="csv"
+                shift
+                if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                    output_file="$1"
+                    shift
+                fi
+                ;;
+            --json)
+                format="json"
+                shift
+                if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                    output_file="$1"
+                    shift
+                fi
+                ;;
+            *)
+                echo "❌ Unknown export option: $1"
+                echo "Usage: dev-timer export --csv [file] | --json [file]"
+                return 1
+                ;;
+        esac
+    done
+    
+    if [[ -z "$format" ]]; then
+        echo "❌ Please specify export format: --csv or --json"
+        echo "Usage: dev-timer export --csv [file] | --json [file]"
+        return 1
+    fi
+    
+    case "$format" in
+        csv)
+            export_csv "$output_file"
+            ;;
+        json)
+            export_json "$output_file"
+            ;;
+    esac
+}
+
 notify_complete() {
     local message="$1"
     if command -v notify-send &> /dev/null; then
@@ -298,6 +436,15 @@ main() {
                     shift
                 done
                 ;;
+            export)
+                command="export"
+                shift
+                # Collect remaining args for export command
+                while [[ $# -gt 0 ]]; do
+                    stats_args+=("$1")
+                    shift
+                done
+                ;;
             custom)
                 command="custom"
                 WORK_TIME="$2"
@@ -326,6 +473,9 @@ main() {
             ;;
         stats)
             show_stats "${stats_args[@]}"
+            ;;
+        export)
+            export_data "${stats_args[@]}"
             ;;
         reset)
             reset_stats

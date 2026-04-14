@@ -46,6 +46,12 @@ dev-timer stats --today
 # View sessions with goals
 dev-timer stats --goals
 
+# Export data to CSV
+dev-timer export --csv
+
+# Export data to JSON with custom filename
+dev-timer export --json my-sessions.json
+
 # Reset statistics
 dev-timer reset
 ```
@@ -56,6 +62,7 @@ dev-timer reset
 - 🍅 Pomodoro technique built-in (25/5/15 defaults)
 - 🎯 Session goals - track what you're working on
 - 📊 Session tracking and statistics
+- 📤 Export data to CSV or JSON
 - 🔔 Optional system notifications
 - 🎵 Sound alerts (or quiet mode)
 - ⌨️  Keyboard interrupt (Ctrl+C)
@@ -77,6 +84,7 @@ You can customize all of these with flags.
 - `long` - Start a long break
 - `custom MIN` - Start a custom timer
 - `stats` - View session statistics
+- `export` - Export session data to CSV or JSON
 - `reset` - Reset all statistics
 
 ## Options
@@ -107,7 +115,42 @@ dev-timer automatically tracks your sessions in `~/.dev-timer/sessions.log`. Use
 - `dev-timer stats --today` - Today's sessions only
 - `dev-timer stats --goals` - Sessions with goals
 
-Example output:
+### Export Data
+
+You can export your session data for analysis in spreadsheets or other tools:
+
+- `dev-timer export --csv` - Export to CSV (default: `sessions.csv`)
+- `dev-timer export --csv my-data.csv` - Export to custom CSV file
+- `dev-timer export --json` - Export to JSON (default: `sessions.json`)
+- `dev-timer export --json my-data.json` - Export to custom JSON file
+
+The JSON export includes a summary section with aggregate statistics.
+
+Example CSV output:
+```csv
+timestamp,date,type,minutes,goal
+"2026-04-14 08:00:00","2026-04-14","work",25,"Fix authentication bug"
+"2026-04-14 08:30:00","2026-04-14","break",5,
+"2026-04-14 08:40:00","2026-04-14","work",25,"Write unit tests"
+```
+
+Example JSON output:
+```json
+{
+  "sessions": [
+    {"timestamp":"2026-04-14 08:00:00","date":"2026-04-14","type":"work","minutes":25,"goal":"Fix authentication bug"},
+    {"timestamp":"2026-04-14 08:30:00","date":"2026-04-14","type":"break","minutes":5,"goal":""}
+  ],
+  "summary": {
+    "total_sessions": 2,
+    "work_sessions": 1,
+    "break_sessions": 1,
+    "total_minutes": 30
+  }
+}
+```
+
+Example stats output:
 ```
 📊 dev-timer Statistics
 =======================
